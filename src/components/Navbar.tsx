@@ -1,72 +1,44 @@
-import React from 'react';
-import { Database, ShieldCheck, KeyRound, Download, Sliders, ExternalLink } from 'lucide-react';
+import Link from 'next/link';
+import { Database, Download } from 'lucide-react';
+import { BRAND_SHORT } from '@/lib/constants';
 
-interface NavbarProps {
-  onOpenAccessPortal: () => void;
-  onOpenAdmin: () => void;
-  onGoHome: () => void;
-  onOpenRazorpaySettings?: () => void;
-}
-
-export const Navbar: React.FC<NavbarProps> = ({ 
-  onOpenAccessPortal, 
-  onOpenAdmin, 
-  onGoHome,
-  onOpenRazorpaySettings,
-}) => {
+export function Navbar() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand */}
-        <button
-          onClick={onGoHome}
-          className="flex items-center gap-2.5 text-left group focus:outline-none"
-        >
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:bg-blue-500 transition-colors">
-            <Database className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-white text-base tracking-tight">Research Dital</span>
-              <span className="text-[10px] text-blue-400 font-mono font-medium">Pro</span>
-            </div>
-            <p className="text-[10px] text-slate-400 font-mono -mt-0.5">Razorpay Secured</p>
-          </div>
-        </button>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+        <Link href="/" className="flex items-center gap-2.5 group rounded-lg shrink-0" aria-label="Research Digital Pro home">
+          <span className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:bg-blue-500 transition-colors">
+            <Database className="w-4 h-4" aria-hidden="true" />
+          </span>
+          <span className="flex items-baseline gap-1.5">
+            <span className="font-black text-white text-base tracking-tight">{BRAND_SHORT}</span>
+            <span className="text-xs text-blue-300 font-mono font-medium">Pro</span>
+          </span>
+        </Link>
 
-        {/* Navigation & Controls */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          <button
-            onClick={onOpenAccessPortal}
-            className="text-xs text-slate-300 hover:text-white font-medium transition-colors flex items-center gap-1.5 py-1.5 px-3 rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-800"
+        <nav aria-label="Main" className="flex items-center gap-1 sm:gap-2 text-sm">
+          <Link
+            href="/#catalog"
+            className="hidden sm:inline-flex px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-900 transition-colors"
           >
-            <Download className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden sm:inline">Track Download Pass</span>
-            <span className="sm:hidden">Passes</span>
-          </button>
-
-          {onOpenRazorpaySettings && (
-            <button
-              onClick={onOpenRazorpaySettings}
-              className="text-xs text-emerald-400 hover:text-emerald-300 font-medium transition-colors flex items-center gap-1.5 py-1.5 px-2.5 sm:px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:border-emerald-500/40"
-              title="Razorpay Gateway Credentials & Testing"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Razorpay Setup</span>
-            </button>
-          )}
-
-          <button
-            onClick={onOpenAdmin}
-            className="text-xs text-slate-300 hover:text-white font-medium transition-colors flex items-center gap-1.5 py-1.5 px-3 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700"
-            title="Owner Dashboard & Real-Time Download Tracking"
+            Datasets
+          </Link>
+          <Link
+            href="/contact"
+            className="hidden sm:inline-flex px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-900 transition-colors"
           >
-            <Sliders className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden md:inline">Merchant &amp; Logs</span>
-            <span className="md:hidden">Logs</span>
-          </button>
-        </div>
+            Support
+          </Link>
+          <Link
+            href="/access"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium text-white bg-slate-900 ring-1 ring-slate-700 hover:ring-slate-500 transition-colors"
+          >
+            <Download className="w-4 h-4 text-blue-400" aria-hidden="true" />
+            <span className="hidden min-[380px]:inline">My download</span>
+            <span className="min-[380px]:hidden">Download</span>
+          </Link>
+        </nav>
       </div>
     </header>
   );
-};
+}

@@ -1,6 +1,11 @@
-import { Product } from '../types.ts';
+import type { Product } from '@/types';
 
-export const INITIAL_PRODUCTS: Product[] = [
+/**
+ * Single source of truth for the public product catalog, used by both the server
+ * (API routes, server-rendered pages) and the client. Drive links are NOT stored here;
+ * they live on the server only (see src/lib/server/catalog.ts).
+ */
+export const PRODUCTS: Product[] = [
   {
     id: 'us-data',
     title: 'USA B2B & Consumer Master Database',
@@ -11,14 +16,13 @@ export const INITIAL_PRODUCTS: Product[] = [
     recordCount: '1,250,000+ Records',
     fileFormat: 'CSV / XLSX',
     fileSize: '185 MB',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'Special Offer: ₹79 · 2026 Updated Data',
-    description: 'High-accuracy, verified US leads across all 50 states with 2026 fresh verified contacts. Includes executives, direct phone numbers, business email addresses, industry codes (SIC/NAICS), and verified postal addresses.',
+    lastUpdated: 'September 2026',
+    badge: 'US numbers (+1)',
+    description: 'US business and consumer contacts across all 50 states: executives, direct phone numbers, business emails, SIC/NAICS industry codes and postal addresses.',
     highlights: [
-      '⚡ 2026 Fresh Data Included: Scrubbed & verified for 2026 outreach',
-      'Comprehensive 50-State coverage with postal verification',
-      'Direct contact emails, mobile/office phones, and LinkedIn profiles',
-      'Cleaned & scrubbed against spam traps, bounce rate < 2%',
+      'Coverage across all 50 states, with postal addresses',
+      'Business emails, office and mobile numbers, LinkedIn profiles',
+      'Cleaned against known spam-trap addresses before delivery',
     ],
     sampleColumns: ['Company', 'Contact Name', 'Job Title', 'Work Email', 'Contact Number', 'City', 'State', 'Annual Revenue'],
     sampleRows: [
@@ -64,14 +68,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     recordCount: '850,000+ Records',
     fileFormat: 'CSV / XLSX',
     fileSize: '142 MB',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'Only ₹49 · 2026 Fresh Data',
-    description: 'Worldwide executive contacts spanning North America, Europe, APAC, and Middle East. Includes verified 2026 active leads for enterprise outreach and prospecting.',
+    lastUpdated: 'September 2026',
+    description: 'Executive contacts across North America, Europe, APAC and the Middle East, for enterprise outreach and prospecting.',
     highlights: [
-      '⚡ 2026 Fresh Data Included: Active 2026 decision makers & C-Suite',
-      'Covers CEOs, Founders, VPs, and Technical Decision Makers',
-      'Includes corporate domain, revenue bracket, and tech stack tags',
-      'Pre-formatted for instant import into Apollo, HubSpot, and Instantly',
+      'CEOs, founders, VPs and technical decision makers',
+      'Company domain, revenue bracket and tech-stack tags',
+      'Column layout ready to import into Apollo, HubSpot or Instantly',
     ],
     sampleColumns: ['Full Name', 'Company Name', 'Executive Role', 'Direct Email', 'Contact Number', 'City / State', 'Industry'],
     sampleRows: [
@@ -114,14 +116,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     recordCount: '420,000+ Stores',
     fileFormat: 'CSV / XLSX',
     fileSize: '96 MB',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'Only ₹49 · 2026 Fresh Data',
-    description: 'Verified direct contacts of D2C founders, Shopify Plus brand owners, and e-commerce directors with active stores verified in 2026.',
+    lastUpdated: 'September 2026',
+    description: 'Direct contacts for D2C founders, Shopify Plus brand owners and e-commerce directors.',
     highlights: [
-      '⚡ 2026 Fresh Data Included: Active 2026 operating e-commerce stores',
-      'Categorized by niche: Fashion, Beauty, Electronics, Home & Pet',
-      'Includes store estimated GMV, Klaviyo/Meta Pixel presence',
-      'Direct founder email and Instagram/TikTok handle links',
+      'Grouped by niche: fashion, beauty, electronics, home and pet',
+      'Estimated store GMV and Klaviyo / Meta Pixel presence',
+      'Founder email plus Instagram and TikTok handles',
     ],
     sampleColumns: ['Store Name', 'Domain', 'Founder Name', 'Direct Email', 'Contact Number', 'Platform', 'Monthly Revenue'],
     sampleRows: [
@@ -164,14 +164,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     recordCount: '620,000+ Records',
     fileFormat: 'CSV / XLSX',
     fileSize: '118 MB',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'Only ₹49 · 2026 Fresh Data',
-    description: 'Extensive database of active 2026 accredited real estate investors, syndicators, commercial brokerages, and property asset managers.',
+    lastUpdated: 'September 2026',
+    description: 'Real estate investors, syndicators, commercial brokerages and property asset managers.',
     highlights: [
-      '⚡ 2026 Fresh Data Included: Verified active 2026 investors & brokers',
-      'Commercial, Residential, Multi-Family, and Land development segments',
-      'Includes investor portfolio size, preferred asset classes, and state',
-      'Direct verified mobile numbers and personal/office emails',
+      'Commercial, residential, multi-family and land segments',
+      'Portfolio size, preferred asset classes and location',
+      'Mobile numbers and personal or office emails',
     ],
     sampleColumns: ['Firm / Investor', 'Principal Name', 'Asset Specialization', 'Email Address', 'Contact Number', 'City / State'],
     sampleRows: [
@@ -211,14 +209,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     recordCount: '340,000+ Startups',
     fileFormat: 'CSV / XLSX',
     fileSize: '78 MB',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'Only ₹49 · 2026 Fresh Data',
-    description: 'Fresh directory of high-growth 2026 tech startups, YC / Techstars alumni, AI innovators, and recently funded venture-backed companies.',
+    lastUpdated: 'September 2026',
+    description: 'Seed and Series A startups, accelerator alumni and recently funded venture-backed companies.',
     highlights: [
-      '⚡ 2026 Fresh Data Included: Recent 2026 funding rounds & new startups',
-      'Founders, Co-founders, and Heads of Engineering with verified contact info',
-      'Funding stage, last round raised ($), and lead investors tagged',
-      'Categorized by AI/ML, SaaS, Web3, ClimateTech, and HealthTech',
+      'Founders, co-founders and heads of engineering',
+      'Funding stage, last round raised and lead investors',
+      'Grouped by AI/ML, SaaS, Web3, ClimateTech and HealthTech',
     ],
     sampleColumns: ['Startup Name', 'Stage', 'Founders', 'Founder Email', 'Contact Number', 'Location', 'Tech Focus'],
     sampleRows: [
@@ -261,14 +257,12 @@ export const INITIAL_PRODUCTS: Product[] = [
     recordCount: '280,000+ Agencies',
     fileFormat: 'CSV / XLSX',
     fileSize: '65 MB',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'Only ₹49 · 2026 Fresh Data',
-    description: 'Verified contact list of marketing agency founders, media buyers, SEO leads, and creative directors actively operating in 2026.',
+    lastUpdated: 'September 2026',
+    description: 'Marketing agency founders, media buyers, SEO leads and creative directors.',
     highlights: [
-      '⚡ 2026 Fresh Data Included: Active 2026 digital marketing agencies',
-      'Categorized: Performance Ads, SEO, Influencer, Web Design, PR',
-      'Agency team size and typical client budget range listed',
-      'Direct decision-maker contact details for white-label partnerships',
+      'Grouped by paid ads, SEO, influencer, web design and PR',
+      'Agency team size and typical client budget range',
+      'Decision-maker contacts for white-label partnerships',
     ],
     sampleColumns: ['Agency Name', 'Agency Head', 'Specialization', 'Work Email', 'Contact Number', 'Location', 'Client Tier'],
     sampleRows: [
@@ -304,21 +298,20 @@ export const INITIAL_PRODUCTS: Product[] = [
   {
     id: 'all-drive-bundle',
     title: 'Complete Master Drive Access (All Folders & Files)',
-    category: 'VIP Bundle',
+    category: 'Complete Bundle',
     price: 249,
     currency: 'INR',
     originalPrice: 1999,
     recordCount: '3,800,000+ Records Total',
     fileFormat: 'All CSV + XLSX + JSON + SQL',
     fileSize: '780 MB Total',
-    lastUpdated: 'September 2026 (Fresh Update)',
-    badge: 'VIP Master Bundle · Only ₹249',
-    description: 'Full uninhibited access to all datasets in the Google Drive repository: USA B2B data, Global C-Suite, E-Commerce, Real Estate, Startups, and all fresh 2026 files.',
+    lastUpdated: 'September 2026',
+    badge: 'Every dataset included',
+    description: 'One purchase unlocks the complete Google Drive repository: US data, global executives, e-commerce, real estate, startups and marketing agencies.',
     highlights: [
-      '⚡ Complete 2026 Updated Suite: Unlocks all 2026 datasets instantly',
-      'Direct unrestricted VIP access to all folders in the Google Drive',
-      'Lifetime folder access including all newly uploaded 2026 database dumps',
-      'Priority download bandwidth and dedicated customer support',
+      'All folders and files in the Drive repository',
+      'CSV, XLSX, JSON and SQL formats',
+      'Email support for any access problem',
     ],
     sampleColumns: ['Dataset Title', 'Contact Number Format', 'Included Records', 'File Formats', 'Access Type'],
     sampleRows: [
@@ -346,3 +339,23 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
   },
 ];
+
+export const US_PRODUCT_ID = 'us-data';
+export const BUNDLE_PRODUCT_ID = 'all-drive-bundle';
+
+export function getProductById(id: string): Product | undefined {
+  return PRODUCTS.find((p) => p.id === id);
+}
+
+/**
+ * Prices used in marketing copy (banner, hero, footer, terms). Derived from the catalog
+ * so the text can never drift from what checkout actually charges.
+ */
+export function getPriceSummary() {
+  const standard = PRODUCTS.filter((p) => p.id !== US_PRODUCT_ID && p.id !== BUNDLE_PRODUCT_ID);
+  return {
+    us: getProductById(US_PRODUCT_ID)?.price ?? 0,
+    standardFrom: standard.length ? Math.min(...standard.map((p) => p.price)) : 0,
+    bundle: getProductById(BUNDLE_PRODUCT_ID)?.price ?? 0,
+  };
+}

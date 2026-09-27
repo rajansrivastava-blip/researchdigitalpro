@@ -1,256 +1,221 @@
+'use client';
+
 import React, { useEffect, useState } from 'react';
-import confetti from 'canvas-confetti';
-import {
-  CheckCircle2,
-  Clock,
-  Download,
-  Copy,
-  Check,
-  Mail,
-  ExternalLink,
-  ShieldAlert,
-  FileCheck,
-  RefreshCw,
-} from 'lucide-react';
+import { Bookmark, Check, CheckCircle2, Copy, Download, Link2, Loader2, ReceiptText, ShieldCheck } from 'lucide-react';
+import type { PaymentResult } from '@/types';
+import { useOrigin } from '@/lib/useOrigin';
+import { timeLeft, useNow } from '@/lib/useNow';
+import { CountdownTiles, ModalShell } from './ui/ModalShell';
 
 interface SuccessReceiptModalProps {
-  paymentResult: {
-    token: string;
-    expiresAt: string;
-    maxDownloads: number;
-    downloadCount: number;
-    productTitle: string;
-    orderId: string;
-    paymentId: string;
-    recipientEmail: string;
-  };
+  paymentResult: PaymentResult;
+  supportEmail: string;
   onClose: () => void;
-  onOpenEmailPreview: (token: string) => void;
+  onOpenReceipt: (token: string) => void;
 }
 
-export const SuccessReceiptModal: React.FC<SuccessReceiptModalProps> = ({
-  paymentResult,
-  onClose,
-  onOpenEmailPreview,
-}) => {
-  const [timeLeft, setTimeLeft] = useState<{ hours: number; minutes: number; seconds: number }>({
-    hours: 23,
-    minutes: 59,
-    seconds: 59,
-  });
+export const SuccessReceiptModal: React.FC<SuccessReceiptModalProps> = ({ paymentResult, supportEmail, onClose, onOpenReceipt }) => {
+  const origin = useOrigin();
+  const accessPath = `/access?token=${encodeURIComponent(paymentResult.token)}`;
+  const accessUrl = `${origin}${accessPath}`;
+  const left = timeLeft(paymentResult.expiresAt, useNow()) ?? { hours: 0, minutes: 0, seconds: 0 };
   const [isCopied, setIsCopied] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadCount, setDownloadCount] = useState(paymentResult.downloadCount || 0);
 
-  // Trigger celebration confetti on mount
+  // Celebration confetti, loaded only when a payment succeeds.
   useEffect(() => {
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-    } catch (e) {
-      console.warn('Confetti error:', e);
-    }
+    let cancelled = false;
+    import('canvas-confetti')
+      .then(({ default: confetti }) => {
+        if (!cancelled) confetti({ particleCount: 90, spread: 75, origin: { y: 0.55 }, colors: ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24'] });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Countdown timer calculations
-  useEffect(() => {
-    const calculateTimeLeft = () => {
-      const difference = new Date(paymentResult.expiresAt).getTime() - Date.now();
-      if (difference <= 0) {
-        setTimeLeft({ hours: 0, minutes: 0, seconds: 0 });
-        return;
-      }
+  const directDownloadUrl = `/api/download/${encodeURIComponent(paymentResult.token)}`;
+  const limitReached = downloadCount >= paymentResult.maxDownloads;
 
-      const hours = Math.floor(difference / (1000 * 60 * 60));
-      const minutes = Math.floor((difference / 1000 / 60) % 60);
-      const seconds = Math.floor((difference / 1000) % 60);
-
-      setTimeLeft({ hours, minutes, seconds });
-    };
-
-    calculateTimeLeft();
-    const interval = setInterval(calculateTimeLeft, 1000);
-    return () => clearInterval(interval);
-  }, [paymentResult.expiresAt]);
-
-  const accessUrl = `${window.location.origin}/?token=${paymentResult.token}`;
-  const directDownloadUrl = `/api/download/${paymentResult.token}`;
-
-  const copyAccessLink = () => {
-    navigator.clipboard.writeText(accessUrl);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2500);
+  const copyAccessLink = async () => {
+    try {
+      await navigator.clipboard.writeText(accessUrl);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2500);
+    } catch {
+      // Clipboard can be blocked (e.g. non-HTTPS). The link stays visible in the input for manual copy.
+    }
   };
 
-  const handleDownloadClick = () => {
+  const handleDownloadClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (isDownloading || limitReached) {
+      e.preventDefault();
+      return;
+    }
     setIsDownloading(true);
     setDownloadCount((prev) => prev + 1);
-    // Open download endpoint
-    window.location.href = directDownloadUrl;
     setTimeout(() => setIsDownloading(false), 2000);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col max-h-[92vh]">
-        {/* Success Banner */}
-        <div className="px-6 py-6 border-b border-slate-800 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-blue-950/40 text-center">
-          <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 mx-auto flex items-center justify-center mb-3">
-            <CheckCircle2 className="w-7 h-7" />
+    <ModalShell
+      onClose={onClose}
+      accent="emerald"
+      size="md"
+      eyebrow="Payment confirmed"
+      title="Your download is ready"
+      subtitle="Save your access link now. You will need it to download again later."
+      icon={
+        <span className="relative flex items-center justify-center">
+          <span aria-hidden="true" className="absolute inset-0 rounded-full bg-emerald-400/40 animate-ring" />
+          <CheckCircle2 className="relative w-6 h-6" />
+        </span>
+      }
+      footer={
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+          <span className="text-slate-400">
+            Need help? <a href={`mailto:${supportEmail}`} className="font-mono text-blue-300 hover:text-blue-200">{supportEmail}</a>
+          </span>
+          <button onClick={onClose} className="px-5 py-2.5 font-semibold rounded-xl ring-1 ring-slate-700 hover:bg-white/5 text-slate-200 transition-colors">
+            Done
+          </button>
+        </div>
+      }
+    >
+      <div className="space-y-5 text-sm">
+        {/* Pass "ticket" */}
+        <div className="relative rounded-3xl p-px bg-linear-to-br from-emerald-400/60 via-teal-500/20 to-blue-500/50">
+          <div className="relative rounded-[calc(1.5rem-1px)] bg-linear-to-br from-slate-900 via-slate-950 to-slate-900 overflow-hidden">
+            <div aria-hidden="true" className="pointer-events-none absolute -top-16 -left-10 w-40 h-40 rounded-full bg-emerald-500/15 blur-3xl" />
+
+            <div className="relative p-5 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <span className="text-xs font-mono uppercase tracking-[0.18em] text-emerald-300">Download pass</span>
+                  <h3 className="mt-1 font-bold text-white leading-snug">{paymentResult.productTitle}</h3>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className="block text-xs font-mono text-slate-400">DOWNLOADS</span>
+                  <span className="text-lg font-black text-white tabular-nums">
+                    {downloadCount}
+                    <span className="text-slate-400 text-xs font-medium"> / {paymentResult.maxDownloads}</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex gap-1" aria-hidden="true">
+                {Array.from({ length: paymentResult.maxDownloads }).map((_, i) => (
+                  <span key={i} className={`h-1.5 flex-1 rounded-full ${i < downloadCount ? 'bg-emerald-400' : 'bg-slate-800'}`} />
+                ))}
+              </div>
+
+              <a
+                href={directDownloadUrl}
+                target="_blank"
+                rel="noopener"
+                onClick={handleDownloadClick}
+                aria-disabled={limitReached || undefined}
+                className={`group relative overflow-hidden w-full py-3.5 px-4 rounded-2xl font-bold text-slate-950 bg-linear-to-r from-emerald-400 to-teal-300 shadow-lg shadow-emerald-500/25 hover:shadow-emerald-400/40 transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
+                  limitReached ? 'opacity-50 pointer-events-none' : ''
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-y-0 -left-1/2 w-1/2 skew-x-[-20deg] bg-white/40 blur-sm transition-transform duration-700 group-hover:translate-x-[300%]"
+                />
+                {isDownloading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                    <span>Opening your files…</span>
+                  </>
+                ) : limitReached ? (
+                  <span>Download limit reached</span>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" aria-hidden="true" />
+                    <span>Download now</span>
+                  </>
+                )}
+              </a>
+            </div>
+
+            <div className="relative flex items-center" aria-hidden="true">
+              <span className="absolute -left-3 w-6 h-6 rounded-full bg-slate-950" />
+              <span className="w-full border-t-2 border-dashed border-slate-800 mx-4" />
+              <span className="absolute -right-3 w-6 h-6 rounded-full bg-slate-950" />
+            </div>
+
+            <div className="relative p-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span className="block text-xs font-mono uppercase tracking-widest text-slate-400 mb-1.5">Link expires in</span>
+                <CountdownTiles {...left} tone="amber" />
+              </div>
+              <dl className="text-right font-mono text-xs text-slate-400 space-y-0.5">
+                <div>
+                  <dt className="inline">ORDER </dt>
+                  <dd className="inline text-slate-200 wrap-anywhere">{paymentResult.orderId}</dd>
+                </div>
+                <div>
+                  <dt className="inline">PAYMENT </dt>
+                  <dd className="inline text-slate-200 wrap-anywhere">{paymentResult.paymentId}</dd>
+                </div>
+              </dl>
+            </div>
           </div>
-          <h3 className="text-xl font-bold text-white tracking-tight">Payment Verified & Access Granted!</h3>
-          <p className="text-xs text-slate-300 mt-1 max-w-md mx-auto">
-            Your transaction was processed successfully via Razorpay. Your secure, time-limited download pass is now active.
+        </div>
+
+        {/* Save the link */}
+        <div className="p-4 rounded-2xl bg-amber-500/5 ring-1 ring-amber-400/25 flex items-start gap-3">
+          <Bookmark className="w-5 h-5 text-amber-300 shrink-0 mt-0.5" aria-hidden="true" />
+          <p className="text-slate-300">
+            <span className="font-semibold text-white">Save this link.</span> We do not email it. If you lose it, use{' '}
+            <span className="font-semibold text-white">Find my pass</span> with{' '}
+            <span className="text-slate-100 wrap-anywhere">{paymentResult.recipientEmail}</span> and your payment ID.
           </p>
         </div>
 
-        {/* Scrollable Details */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs">
-          {/* Time-Limited Expiration Notice */}
-          <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-800/40 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
-                <Clock className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="font-semibold text-amber-300 block">Time-Limited Link Active</span>
-                <span className="text-[11px] text-slate-400">
-                  Valid for 24 hours. Expiry timestamp: {new Date(paymentResult.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            </div>
-            <div className="text-right shrink-0">
-              <span className="font-mono text-sm font-bold text-amber-400">
-                {String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:
-                {String(timeLeft.seconds).padStart(2, '0')}
-              </span>
-              <span className="text-[10px] text-slate-400 block">Remaining</span>
-            </div>
-          </div>
-
-          {/* Download Action Box */}
-          <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <span className="text-[11px] uppercase tracking-wider text-blue-400 font-mono font-medium block">
-                  Purchased Product
-                </span>
-                <h4 className="text-sm font-semibold text-white mt-0.5">{paymentResult.productTitle}</h4>
-              </div>
-              <div className="text-right">
-                <span className="text-[11px] text-slate-400 block font-mono">Downloads Used</span>
-                <span className="text-xs font-bold text-slate-200">
-                  {downloadCount} / {paymentResult.maxDownloads}
-                </span>
-              </div>
-            </div>
-
+        <div>
+          <label htmlFor="access-link" className="flex items-center gap-1.5 text-sm font-medium text-slate-200 mb-1.5">
+            <Link2 className="w-4 h-4 text-slate-400" aria-hidden="true" />
+            Your access link
+          </label>
+          <div className="flex items-center gap-2 p-1 rounded-xl bg-slate-900 ring-1 ring-slate-800">
+            <input
+              id="access-link"
+              type="text"
+              readOnly
+              value={accessUrl}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono bg-transparent text-slate-200 outline-none"
+            />
             <button
-              onClick={handleDownloadClick}
-              disabled={isDownloading || downloadCount >= paymentResult.maxDownloads}
-              className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/10 transform active:scale-98 disabled:opacity-50"
+              onClick={copyAccessLink}
+              className={`shrink-0 px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-colors ${
+                isCopied ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+              }`}
             >
-              {isDownloading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Connecting to Secure Storage...</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  <span>Download Database Now</span>
-                </>
-              )}
+              {isCopied ? <Check className="w-4 h-4" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+              <span>{isCopied ? 'Copied' : 'Copy'}</span>
             </button>
-
-            <p className="text-[11px] text-slate-400 text-center leading-relaxed">
-              Downloads are securely routed through our server and tracked to prevent unauthorized link sharing.
-            </p>
-          </div>
-
-          {/* Email Delivery Confirmation */}
-          <div className="p-4 rounded-xl bg-blue-950/20 border border-blue-800/40 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Mail className="w-5 h-5 text-blue-400 shrink-0" />
-              <div>
-                <span className="font-medium text-slate-200 block">Link Dispatched via Email</span>
-                <span className="text-[11px] text-slate-400">
-                  Delivered to <strong className="text-slate-300">{paymentResult.recipientEmail}</strong>
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => onOpenEmailPreview(paymentResult.token)}
-              className="px-3 py-1.5 rounded-md bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-medium transition-colors flex items-center gap-1.5"
-            >
-              <span>View Email</span>
-              <ExternalLink className="w-3 h-3" />
-            </button>
-          </div>
-
-          {/* Copyable Access Link */}
-          <div>
-            <label className="block text-[11px] font-medium text-slate-300 mb-1.5">
-              Direct Access Link (Copy or Bookmark)
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={accessUrl}
-                className="flex-1 px-3 py-2 text-xs font-mono rounded-lg bg-slate-950 border border-slate-800 text-slate-300 focus:outline-none"
-              />
-              <button
-                onClick={copyAccessLink}
-                className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center gap-1.5 text-xs font-medium shrink-0"
-              >
-                {isCopied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Copied!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Copy Link</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Transaction Metadata */}
-          <div className="pt-2 border-t border-slate-800/60 grid grid-cols-2 gap-2 text-[11px] text-slate-400 font-mono">
-            <div>
-              <span>Order ID: </span>
-              <span className="text-slate-300">{paymentResult.orderId}</span>
-            </div>
-            <div>
-              <span>Payment ID: </span>
-              <span className="text-slate-300">{paymentResult.paymentId}</span>
-            </div>
-          </div>
-
-          {/* 24-Hour Guarantee & Support Prompt */}
-          <div className="p-2.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[10px] text-slate-400 flex items-center justify-between gap-2">
-            <span>Payment done but need help? Email <strong className="text-blue-400 font-mono">helpeasemymart@gmail.com</strong></span>
-            <span className="text-emerald-400 font-medium shrink-0">24h SLA Guarantee</span>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="flex items-center gap-1.5 text-xs text-slate-400">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+            Each download is counted against your limit.
+          </p>
           <button
-            onClick={onClose}
-            className="px-5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+            onClick={() => onOpenReceipt(paymentResult.token)}
+            className="px-3 py-1.5 rounded-lg bg-violet-500/10 hover:bg-violet-500/20 ring-1 ring-violet-400/30 text-violet-200 text-sm font-medium flex items-center gap-1.5"
           >
-            Done & Return to Store
+            <ReceiptText className="w-4 h-4" aria-hidden="true" />
+            View receipt
           </button>
         </div>
       </div>
-    </div>
+    </ModalShell>
   );
 };

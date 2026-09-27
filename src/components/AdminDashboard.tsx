@@ -1,34 +1,57 @@
-import React, { useState, useEffect } from 'react';
+'use client';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Shield,
-  Download,
-  IndianRupee,
   Clock,
   Eye,
   RefreshCw,
-  Sliders,
   CheckCircle,
   AlertCircle,
   ExternalLink,
   Ban,
-  ArrowRight,
   HardDrive,
   KeyRound,
   FileSpreadsheet,
+  LogOut,
+  Activity,
+  Download,
 } from 'lucide-react';
-import { OrderRecord } from '../types.ts';
+import type { AdminConfig, AdminSummary, OrderRecord } from '@/types';
+import { useAppUI } from './AppProviders';
+import { BRAND_NAME } from '@/lib/constants';
+import { useOrigin } from '@/lib/useOrigin';
+import { ModalShell } from './ui/ModalShell';
+
+type AdminLoadResult =
+  | { kind: 'ok'; data: { orders?: OrderRecord[]; summary?: AdminSummary; config?: AdminConfig } }
+  | { kind: 'unauthorized' }
+  | { kind: 'error'; message: string };
+
+/** Fetches dashboard data without touching React state (so it can run from an effect). */
+async function loadAdminData(): Promise<AdminLoadResult> {
+  try {
+    const res = await fetch('/api/admin/orders', { cache: 'no-store' });
+    if (res.status === 401) return { kind: 'unauthorized' };
+    const data = await res.json();
+    if (!res.ok) return { kind: 'error', message: data.error || 'Failed to load dashboard data.' };
+    return { kind: 'ok', data };
+  } catch (e) {
+    console.error('Failed to load admin data:', e);
+    return { kind: 'error', message: e instanceof Error ? e.message : 'Failed to load dashboard data.' };
+  }
+}
 
 interface AdminDashboardProps {
-  onClose: () => void;
-  onOpenEmailPreview: (token: string) => void;
   initialTab?: 'downloads' | 'settings';
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
-  onClose, 
-  onOpenEmailPreview,
-  initialTab = 'downloads',
-}) => {
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ initialTab = 'downloads' }) => {
+  const router = useRouter();
+  const { openReceipt } = useAppUI();
+  const origin = useOrigin();
   const [activeTab, setActiveTab] = useState<'downloads' | 'settings'>(initialTab);
   const [testStatus, setTestStatus] = useState<{
     loading: boolean;
@@ -36,45 +59,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     message?: string;
   } | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [summary, setSummary] = useState({
+  const [summary, setSummary] = useState<AdminSummary>({
     totalRevenue: 0,
     totalOrders: 0,
     totalDownloads: 0,
     activeTokens: 0,
     currency: 'INR',
   });
-  const [config, setConfig] = useState({
+  const [config, setConfig] = useState<AdminConfig>({
     razorpayKeyId: '',
-    razorpayKeySecret: '',
+    razorpayKeySecretSet: false,
     masterDriveLink: '',
     tokenExpiryHours: 24,
     maxDownloadsPerToken: 5,
     supportEmail: '',
   });
+  // The saved secret is never sent to the browser. This holds a newly typed one only.
+  const [newKeySecret, setNewKeySecret] = useState('');
+  // Timestamp used to classify passes as expired. Updated on every data load (keeps render pure).
+  const [now, setNow] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedOrderLogs, setSelectedOrderLogs] = useState<OrderRecord | null>(null);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const fetchAdminData = async () => {
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/admin/orders');
-      const data = await res.json();
-      if (res.ok) {
-        setOrders(data.orders || []);
-        setSummary(data.summary || summary);
-        setConfig(data.config || config);
+  const applyAdminData = useCallback(
+    (result: AdminLoadResult) => {
+      if (result.kind === 'unauthorized') {
+        router.refresh(); // Session expired: the page re-renders the login form.
+        return;
       }
-    } catch (e) {
-      console.error('Failed to load admin data:', e);
-    } finally {
+      if (result.kind === 'error') {
+        setLoadError(result.message);
+      } else {
+        setOrders(result.data.orders || []);
+        setNow(Date.now());
+        if (result.data.summary) setSummary(result.data.summary);
+        if (result.data.config) setConfig(result.data.config);
+        setLoadError(null);
+      }
       setIsLoading(false);
-    }
+    },
+    [router]
+  );
+
+  const fetchAdminData = useCallback(async () => applyAdminData(await loadAdminData()), [applyAdminData]);
+
+  // Initial load. State is only applied once the request settles, and not at all after unmount.
+  useEffect(() => {
+    let cancelled = false;
+    loadAdminData().then((result) => {
+      if (!cancelled) applyAdminData(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyAdminData]);
+
+  const reloadAdminData = () => {
+    setIsLoading(true);
+    fetchAdminData();
   };
 
-  useEffect(() => {
-    fetchAdminData();
-  }, []);
+  const handleLogout = async () => {
+    await fetch('/api/admin/logout', { method: 'POST' }).catch(() => null);
+    router.refresh();
+  };
 
   const handleTokenAction = async (token: string, action: 'revoke' | 'extend_24h' | 'reset_downloads') => {
     try {
@@ -91,21 +141,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleSaveConfig = async (e: React.FormEvent) => {
+  const handleSaveConfig = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSaveStatus('Saving changes...');
+    setSaveStatus({ ok: true, message: 'Saving changes...' });
     try {
+      const { razorpayKeySecretSet: _ignored, ...editable } = config;
       const res = await fetch('/api/admin/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...editable, razorpayKeySecret: newKeySecret }),
       });
-      if (res.ok) {
-        setSaveStatus('Settings updated successfully!');
-        setTimeout(() => setSaveStatus(null), 3000);
-      }
-    } catch (err: any) {
-      setSaveStatus(err.message || 'Error updating settings');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Error updating settings');
+      if (data.config) setConfig(data.config);
+      setNewKeySecret('');
+      setSaveStatus({ ok: true, message: 'Settings updated successfully!' });
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      setSaveStatus({ ok: false, message: err instanceof Error ? err.message : 'Error updating settings' });
     }
   };
 
@@ -117,7 +170,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           keyId: config.razorpayKeyId,
-          keySecret: config.razorpayKeySecret,
+          keySecret: newKeySecret, // blank = test with the saved secret
         }),
       });
       const data = await res.json();
@@ -134,33 +187,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           message: data.error || 'Connection test failed.',
         });
       }
-    } catch (err: any) {
+    } catch (err) {
       setTestStatus({
         loading: false,
         success: false,
-        message: err.message || 'Network error while testing connection.',
+        message: err instanceof Error ? err.message : 'Network error while testing connection.',
       });
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col h-[90vh]">
+    <div className="max-w-6xl mx-auto px-4 py-8 animate-fade-in">
+      <div className="relative w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden text-slate-100 flex flex-col">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400">
               <Shield className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Research Dital Pro Merchant &amp; Download Control Center</h2>
+              <h1 className="text-base font-bold text-white">{BRAND_NAME} · Merchant dashboard</h1>
               <p className="text-[11px] text-slate-400">
                 Track customer downloads in real time, manage Razorpay credentials, and protect Drive assets.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Tab switch */}
             <div className="flex items-center p-1 bg-slate-800/80 rounded-lg text-xs">
               <button
@@ -181,22 +234,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
 
-            <button
-              onClick={onClose}
+            <Link
+              href="/"
               className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
             >
               Exit Console
+            </Link>
+            <button
+              onClick={handleLogout}
+              title="Sign out of the merchant dashboard"
+              className="px-2.5 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-1.5"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Log out</span>
             </button>
           </div>
         </div>
 
+        {loadError && (
+          <div className="px-6 py-3 border-b border-red-900/50 bg-red-950/30 text-xs text-red-300 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{loadError}</span>
+            <button onClick={reloadAdminData} className="px-2.5 py-1 rounded-md bg-red-900/50 hover:bg-red-900 text-red-100 font-medium">
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Overview Stats Bar */}
-        <div className="grid grid-cols-4 border-b border-slate-800 bg-slate-900/60 divide-x divide-slate-800 text-xs">
+        <div className="grid grid-cols-2 md:grid-cols-4 border-b border-slate-800 bg-slate-900/60 divide-x divide-slate-800 text-xs">
           <div className="p-4">
             <span className="text-slate-400 block text-[11px] mb-0.5">Total Revenue</span>
             <div className="flex items-baseline gap-1">
               <span className="text-lg font-bold text-white">₹{summary.totalRevenue}</span>
-              <span className="text-[10px] text-slate-500 font-mono">INR</span>
+              <span className="text-[11px] text-slate-400 font-mono">INR</span>
             </div>
           </div>
           <div className="p-4">
@@ -215,8 +286,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Tab 1: Download Tracking Logs */}
         {activeTab === 'downloads' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            <div className="flex items-center justify-between mb-2">
+          <div className="flex-1 p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
               <div>
                 <h3 className="text-sm font-bold text-white">Customer Transaction & Download Audits</h3>
                 <p className="text-xs text-slate-400">
@@ -224,7 +295,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </p>
               </div>
               <button
-                onClick={fetchAdminData}
+                onClick={reloadAdminData}
                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs text-slate-200 flex items-center gap-1.5 transition-colors"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -234,10 +305,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {orders.length === 0 ? (
               <div className="text-center py-16 border border-dashed border-slate-800 rounded-xl bg-slate-950/40">
-                <FileSpreadsheet className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <FileSpreadsheet className="w-10 h-10 text-slate-500 mx-auto mb-3" />
                 <h4 className="text-sm font-semibold text-slate-300">No Orders Processed Yet</h4>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                  Once customers purchase datasets (US data for ₹79, others for ₹49, VIP bundle for ₹249), their transaction receipts and download tracking entries will appear here.
+                <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                  When customers buy a dataset, their orders and download activity will appear here.
                 </p>
               </div>
             ) : (
@@ -257,8 +328,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-800/80 text-slate-300">
                       {orders.map((order) => {
-                        const isExpired = new Date(order.expiresAt).getTime() < Date.now();
+                        const isExpired = new Date(order.expiresAt).getTime() < now;
                         const isRevoked = order.status === 'revoked';
+                        const isLimitReached = order.downloadCount >= order.maxDownloads;
 
                         return (
                           <tr key={order.token} className="hover:bg-slate-900/50 transition-colors">
@@ -266,17 +338,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className="font-semibold text-white block">{order.customerName}</span>
                               <span className="text-[11px] text-slate-400 font-mono">{order.customerEmail}</span>
                               {order.customerPhone && (
-                                <span className="text-[10px] text-slate-500 block font-mono">{order.customerPhone}</span>
+                                <span className="text-[11px] text-slate-400 block font-mono">{order.customerPhone}</span>
                               )}
                             </td>
                             <td className="py-3 px-4">
                               <span className="font-medium text-slate-200 block truncate max-w-[200px]">
                                 {order.productTitle}
                               </span>
-                              <span className="text-[10px] text-slate-500 font-mono">ID: {order.productId}</span>
+                              <span className="text-[11px] text-slate-400 font-mono">ID: {order.productId}</span>
                             </td>
                             <td className="py-3 px-4 font-semibold text-white">
-                              ₹{order.amount} <span className="text-[10px] text-slate-400 font-normal">INR</span>
+                              ₹{order.amount} <span className="text-[11px] text-slate-400 font-normal">INR</span>
                             </td>
                             <td className="py-3 px-4">
                               {isRevoked ? (
@@ -287,19 +359,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <span className="text-amber-400 font-medium text-[11px] flex items-center gap-1">
                                   <Clock className="w-3 h-3" /> Expired
                                 </span>
+                              ) : isLimitReached ? (
+                                <span className="text-amber-400 font-medium text-[11px] flex items-center gap-1">
+                                  <AlertCircle className="w-3 h-3" /> Limit Reached
+                                </span>
                               ) : (
                                 <span className="text-emerald-400 font-medium text-[11px] flex items-center gap-1">
-                                  <CheckCircle className="w-3 h-3" /> Active (24h)
+                                  <CheckCircle className="w-3 h-3" /> Active
                                 </span>
                               )}
                             </td>
                             <td className="py-3 px-4">
                               <span className="font-bold text-slate-100">{order.downloadCount}</span>
-                              <span className="text-slate-500 text-[11px]"> / {order.maxDownloads}</span>
+                              <span className="text-slate-400 text-[11px]"> / {order.maxDownloads}</span>
                             </td>
                             <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
                               {new Date(order.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              <span className="text-[10px] text-slate-500 block">
+                              <span className="text-[11px] text-slate-400 block">
                                 {new Date(order.expiresAt).toLocaleDateString()}
                               </span>
                             </td>
@@ -313,12 +389,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <Eye className="w-3.5 h-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => onOpenEmailPreview(order.token)}
-                                  title="View sent email"
+                                  onClick={() => openReceipt(order.token)}
+                                  title="View receipt"
+                                  aria-label={`View receipt for ${order.customerEmail}`}
                                   className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-blue-300 transition-colors"
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
                                 </button>
+                                {isLimitReached && !isRevoked && (
+                                  <button
+                                    onClick={() => handleTokenAction(order.token, 'reset_downloads')}
+                                    title="Reset download counter to 0"
+                                    className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                                 {!isRevoked ? (
                                   <button
                                     onClick={() => handleTokenAction(order.token, 'revoke')}
@@ -331,7 +417,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <button
                                     onClick={() => handleTokenAction(order.token, 'extend_24h')}
                                     title="Restore & Extend by 24 Hours"
-                                    className="p-1.5 rounded bg-emerald-950 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 transition-colors text-[10px]"
+                                    className="p-1.5 rounded bg-emerald-950 hover:bg-emerald-900 border border-emerald-800 text-emerald-300 transition-colors text-[11px]"
                                   >
                                     Restore
                                   </button>
@@ -351,7 +437,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Tab 2: Settings & Secret Storage Configuration */}
         {activeTab === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="flex-1 p-6 space-y-6">
             <div className="max-w-2xl">
               <h3 className="text-base font-bold text-white mb-1">Store Gateway & Drive Security Settings</h3>
               <p className="text-xs text-slate-400">
@@ -374,12 +460,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onChange={(e) => setConfig({ ...config, masterDriveLink: e.target.value })}
                     className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-blue-500"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Provided link:{' '}
-                    <code className="text-blue-400">
-                      https://drive.google.com/drive/folders/1TBOQvwhuO3ob4UJ-JH-l0tvq8hnmXYec?usp=drive_link
-                    </code>
-                    . This URL is strictly hidden on the server and only delivered after verified payment.
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Delivered to every new purchase. This URL is strictly hidden on the server and only delivered after verified
+                    payment. Passes issued earlier keep the link they were issued with.
                   </p>
                 </div>
               </div>
@@ -391,17 +474,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <span>Razorpay Payment Gateway API Keys</span>
                   </div>
                   {config.razorpayKeyId.startsWith('rzp_live_') ? (
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-semibold flex items-center gap-1.5">
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       Live Production Gateway
                     </span>
                   ) : config.razorpayKeyId.startsWith('rzp_test_') ? (
-                    <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-semibold flex items-center gap-1.5">
+                    <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-semibold flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                       Test / Sandbox Mode
                     </span>
                   ) : (
-                    <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 text-[10px] font-medium">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 text-[11px] font-medium">
                       Setup Pending (Awaiting Keys)
                     </span>
                   )}
@@ -441,7 +524,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       placeholder="rzp_live_... or rzp_test_..."
                       className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Starts with rzp_live_ (Real) or rzp_test_ (Test)</span>
+                    <span className="text-[11px] text-slate-400">Starts with rzp_live_ (Real) or rzp_test_ (Test)</span>
                   </div>
                   <div>
                     <label className="block text-slate-400 text-[11px] mb-1">
@@ -449,12 +532,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </label>
                     <input
                       type="password"
-                      value={config.razorpayKeySecret}
-                      onChange={(e) => setConfig({ ...config, razorpayKeySecret: e.target.value.trim() })}
-                      placeholder="Enter Key Secret"
+                      autoComplete="new-password"
+                      value={newKeySecret}
+                      onChange={(e) => setNewKeySecret(e.target.value.trim())}
+                      placeholder={config.razorpayKeySecretSet ? '•••••••• saved (leave blank to keep)' : 'Enter Key Secret'}
                       className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 font-mono text-xs focus:outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Used for cryptographic payment signature verification</span>
+                    <span className="text-[11px] text-slate-400">
+                      {config.razorpayKeySecretSet
+                        ? 'A secret is saved on the server. It is never shown again.'
+                        : 'Used for cryptographic payment signature verification'}
+                    </span>
                   </div>
                 </div>
 
@@ -495,7 +583,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   )}
                 </div>
 
-                <p className="text-[11px] text-slate-500 leading-relaxed">
+                <p className="text-[11px] text-slate-400 leading-relaxed">
                   All customer payments via UPI (GPay, PhonePe, Paytm), NetBanking, and Cards will be processed through Razorpay and settled directly to your connected bank account.
                 </p>
 
@@ -510,7 +598,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <strong className="text-white">Account Activation &amp; KYC:</strong> Razorpay creates Live API keys, but blocks customer checkout if your account activation is pending review. Check the top banner at <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline">dashboard.razorpay.com</a> to complete KYC verification.
                     </li>
                     <li>
-                      <strong className="text-white">Website Details:</strong> In your Razorpay Dashboard under <strong className="text-white">Account &amp; Settings &gt; Website details</strong>, ensure your store URL is listed: <code className="text-emerald-400 font-mono text-[10px] break-all">{window.location.origin}</code>.
+                      <strong className="text-white">Website Details:</strong> In your Razorpay Dashboard under <strong className="text-white">Account &amp; Settings &gt; Website details</strong>, ensure your store URL is listed: <code className="text-emerald-400 font-mono text-[11px] wrap-anywhere">{origin}</code>.
                     </li>
                     <li>
                       <strong className="text-white">Instant Testing:</strong> You can switch the toggle at the top of your Razorpay Dashboard to <strong className="text-amber-300">Test Mode</strong>, generate a <code className="text-amber-300 font-mono">rzp_test_...</code> key pair, and paste it here to test the full checkout flow right away!
@@ -535,7 +623,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onChange={(e) => setConfig({ ...config, tokenExpiryHours: Number(e.target.value) })}
                       className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Default: 24 hours per user specification</span>
+                    <span className="text-[11px] text-slate-400">Default: 24 hours per user specification</span>
                   </div>
                   <div>
                     <label className="block text-slate-400 text-[11px] mb-1">Max Download Limit Per Token</label>
@@ -547,7 +635,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       onChange={(e) => setConfig({ ...config, maxDownloadsPerToken: Number(e.target.value) })}
                       className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 text-xs focus:outline-none focus:border-blue-500"
                     />
-                    <span className="text-[10px] text-slate-500">Limits abuse and unauthorized re-sharing</span>
+                    <span className="text-[11px] text-slate-400">Limits abuse and unauthorized re-sharing</span>
                   </div>
                 </div>
               </div>
@@ -555,9 +643,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex items-center justify-between pt-2">
                 <div>
                   {saveStatus && (
-                    <span className="text-emerald-400 flex items-center gap-1.5 text-xs">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      {saveStatus}
+                    <span
+                      className={`flex items-center gap-1.5 text-xs ${saveStatus.ok ? 'text-emerald-400' : 'text-rose-400'}`}
+                    >
+                      {saveStatus.ok ? <CheckCircle className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+                      {saveStatus.message}
                     </span>
                   )}
                 </div>
@@ -574,62 +664,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Detailed IP Audit Modal for a specific order */}
         {selectedOrderLogs && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-            <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-xl p-5 text-xs text-slate-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h4 className="font-bold text-white text-sm">Download Tracking Activity Log</h4>
+          <ModalShell
+            onClose={() => setSelectedOrderLogs(null)}
+            accent="amber"
+            size="md"
+            icon={<Activity className="w-5 h-5" />}
+            eyebrow="Audit trail"
+            title="Download activity"
+            subtitle={
+              <>
+                {selectedOrderLogs.downloadCount} of {selectedOrderLogs.maxDownloads} downloads used
+              </>
+            }
+            footer={
+              <div className="flex justify-end gap-2 text-xs">
                 <button
                   onClick={() => setSelectedOrderLogs(null)}
-                  className="text-slate-400 hover:text-white"
+                  className="px-4 py-2 rounded-xl ring-1 ring-slate-700 hover:bg-white/5 text-slate-300"
                 >
-                  ✕
+                  Close
                 </button>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-slate-400 text-[11px]">Customer: </span>
-                <span className="font-semibold text-white">{selectedOrderLogs.customerName} ({selectedOrderLogs.customerEmail})</span>
-              </div>
-              <div className="space-y-1">
-                <span className="text-slate-400 text-[11px]">Product: </span>
-                <span className="text-blue-300">{selectedOrderLogs.productTitle}</span>
-              </div>
-
-              <div className="border border-slate-800 rounded-lg overflow-hidden bg-slate-950 p-3 max-h-56 overflow-y-auto space-y-2">
-                {selectedOrderLogs.downloadLogs.length === 0 ? (
-                  <p className="text-slate-500 text-center py-4">No download attempts recorded yet for this pass.</p>
-                ) : (
-                  selectedOrderLogs.downloadLogs.map((log, idx) => (
-                    <div key={idx} className="p-2 rounded bg-slate-900/60 border border-slate-800 space-y-1">
-                      <div className="flex justify-between font-mono text-[11px] text-slate-300">
-                        <span>IP: {log.ip}</span>
-                        <span>{new Date(log.timestamp).toLocaleString()}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">{log.userAgent}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   onClick={() => {
                     handleTokenAction(selectedOrderLogs.token, 'extend_24h');
                     setSelectedOrderLogs(null);
                   }}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-xs font-medium"
+                  className="px-4 py-2 rounded-xl bg-linear-to-r from-amber-500 to-orange-500 text-slate-950 font-bold shadow-lg shadow-amber-600/20"
                 >
-                  Extend +24 Hours
-                </button>
-                <button
-                  onClick={() => setSelectedOrderLogs(null)}
-                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-300 text-xs"
-                >
-                  Close
+                  Extend +24 hours
                 </button>
               </div>
+            }
+          >
+            <div className="space-y-4 text-xs text-slate-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="p-3 rounded-2xl bg-slate-900/60 ring-1 ring-slate-800">
+                  <span className="block text-[11px] font-mono uppercase tracking-widest text-slate-400">Customer</span>
+                  <span className="block mt-0.5 font-semibold text-white truncate">{selectedOrderLogs.customerName}</span>
+                  <span className="block text-[11px] font-mono text-slate-400 truncate">{selectedOrderLogs.customerEmail}</span>
+                </div>
+                <div className="p-3 rounded-2xl bg-slate-900/60 ring-1 ring-slate-800">
+                  <span className="block text-[11px] font-mono uppercase tracking-widest text-slate-400">Product</span>
+                  <span className="block mt-0.5 text-blue-300 font-medium leading-snug">{selectedOrderLogs.productTitle}</span>
+                </div>
+              </div>
+
+              {selectedOrderLogs.downloadLogs.length === 0 ? (
+                <div className="text-center py-8 rounded-2xl border border-dashed border-slate-800 text-slate-400">
+                  No download attempts recorded yet for this pass.
+                </div>
+              ) : (
+                <ol className="relative space-y-3 before:absolute before:left-2.75 before:top-2 before:bottom-2 before:w-px before:bg-slate-800">
+                  {[...selectedOrderLogs.downloadLogs].reverse().map((log, idx) => (
+                    <li key={`${log.timestamp}-${idx}`} className="relative pl-9">
+                      <span className="absolute left-0 top-1 w-6 h-6 rounded-full bg-amber-500/15 ring-1 ring-amber-400/40 ring-offset-2 ring-offset-slate-950 flex items-center justify-center">
+                        <Download className="w-3 h-3 text-amber-300" />
+                      </span>
+                      <div className="p-3 rounded-xl bg-slate-900/60 ring-1 ring-slate-800 space-y-1">
+                        <div className="flex flex-wrap justify-between gap-2 font-mono text-[11px]">
+                          <span className="text-slate-200">IP {log.ip}</span>
+                          <span className="text-slate-400">{new Date(log.timestamp).toLocaleString()}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 truncate" title={log.userAgent}>
+                          {log.userAgent}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
-          </div>
+          </ModalShell>
         )}
       </div>
     </div>
