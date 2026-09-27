@@ -68,7 +68,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onPreview, on
 
         {/* Key Highlights */}
         <ul className="space-y-2 mb-4">
-          {product.highlights.slice(0, 3).map((item, idx) => (
+          {(product.highlights || []).slice(0, 3).map((item, idx) => (
             <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">
               <Check className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
               <span className="line-clamp-1">{item}</span>
@@ -84,7 +84,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onPreview, on
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-black text-white tracking-tight">₹{product.price}</span>
               <span className="text-xs font-mono text-slate-400">INR</span>
-              {product.originalPrice > product.price && (
+              {typeof product.originalPrice === 'number' && product.originalPrice > product.price && (
                 <span className="text-xs text-slate-500 line-through ml-1">₹{product.originalPrice}</span>
               )}
             </div>

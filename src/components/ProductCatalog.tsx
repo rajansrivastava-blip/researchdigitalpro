@@ -21,6 +21,7 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ products, onPrev
       { id: 'E-Commerce', label: 'Shopify Brands (₹49)' },
       { id: 'Real Estate', label: 'Real Estate (₹49)' },
       { id: 'Technology', label: 'Tech Startups (₹49)' },
+      { id: 'Marketing', label: 'Marketing Agencies (₹49)' },
       { id: 'VIP Bundle', label: 'Full Vault Bundle (₹249)' },
     ];
     return list;
@@ -28,11 +29,16 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ products, onPrev
 
   const filteredProducts = useMemo(() => {
     return products.filter((item) => {
-      const matchCategory = selectedCategory === 'all' || item.category === selectedCategory;
+      const matchCategory =
+        selectedCategory === 'all' ||
+        item.category.toLowerCase() === selectedCategory.toLowerCase() ||
+        (selectedCategory === 'United States' && (item.category === 'United States' || item.id === 'us-data'));
+      const q = searchQuery.toLowerCase().trim();
       const matchSearch =
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.category.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        item.title.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q);
       return matchCategory && matchSearch;
     });
   }, [products, selectedCategory, searchQuery]);
@@ -92,21 +98,42 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ products, onPrev
         </div>
       </div>
 
-      {/* Interactive Category Filter Tabs (Zero-Pill discipline compliant) */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-900 border border-slate-800/80 rounded-xl overflow-x-auto mb-8 text-xs font-medium text-slate-400">
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => setSelectedCategory(cat.id)}
-            className={`px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
-              selectedCategory === cat.id
-                ? 'bg-slate-800 text-white font-semibold shadow-xs'
-                : 'hover:text-slate-200 hover:bg-slate-800/50'
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
+      {/* Interactive Category Filter Tabs */}
+      <div className="flex items-center gap-1.5 p-1.5 bg-slate-900 border border-slate-800/80 rounded-xl overflow-x-auto mb-8 text-xs font-medium text-slate-400">
+        {categories.map((cat) => {
+          const count =
+            cat.id === 'all'
+              ? products.length
+              : products.filter(
+                  (p) =>
+                    p.category.toLowerCase() === cat.id.toLowerCase() ||
+                    (cat.id === 'United States' && (p.category === 'United States' || p.id === 'us-data'))
+                ).length;
+          return (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.id)}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                selectedCategory === cat.id
+                  ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                  : 'hover:text-slate-200 hover:bg-slate-800/50'
+              }`}
+            >
+              <span>{cat.label}</span>
+              {count > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+                    selectedCategory === cat.id
+                      ? 'bg-blue-800 text-white'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Product Grid */}

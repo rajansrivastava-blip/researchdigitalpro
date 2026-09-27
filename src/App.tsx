@@ -12,12 +12,19 @@ import { Footer } from './components/Footer.tsx';
 import { PrivacyPolicyModal } from './components/PrivacyPolicyModal.tsx';
 import { TermsAndConditionsModal } from './components/TermsAndConditionsModal.tsx';
 import { Product, StoreInfo, AccessDetails } from './types.ts';
+import { INITIAL_PRODUCTS } from './data/products.ts';
 import { ShieldCheck, Sparkles } from 'lucide-react';
 
 export default function App() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [storeInfo, setStoreInfo] = useState<StoreInfo | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [storeInfo, setStoreInfo] = useState<StoreInfo | null>({
+    supportEmail: 'helpeasemymart@gmail.com',
+    tokenExpiryHours: 24,
+    currency: 'INR',
+    razorpayKeyId: '',
+    isDemoMode: false,
+  });
+  const [isLoading, setIsLoading] = useState(false);
 
   // Modals state
   const [previewProduct, setPreviewProduct] = useState<Product | null>(null);
@@ -55,13 +62,17 @@ export default function App() {
   const fetchProducts = async () => {
     try {
       const res = await fetch('/api/products');
-      const data = await res.json();
-      if (data.success) {
-        setProducts(data.products || []);
-        setStoreInfo(data.storeInfo || null);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+          setProducts(data.products);
+        }
+        if (data.storeInfo) {
+          setStoreInfo(data.storeInfo);
+        }
       }
     } catch (e) {
-      console.error('Failed to load products:', e);
+      console.warn('Using verified local product catalog:', e);
     } finally {
       setIsLoading(false);
     }
@@ -136,7 +147,7 @@ export default function App() {
               onOpenAccessPortal={() => setViewMode('access')}
             />
 
-            {isLoading ? (
+            {isLoading && products.length === 0 ? (
               <div className="py-24 text-center">
                 <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-xs text-slate-400 font-mono">Loading digital products repository...</p>
