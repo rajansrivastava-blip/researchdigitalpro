@@ -1,0 +1,6 @@
+{
+  "name": "Research Dital Pro - Digital Datasets",
+  "description": "Research Dital Pro: Verified consumer and B2B dataset repository with Razorpay secure payments and 24h instant download passes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
